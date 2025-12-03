@@ -75,3 +75,54 @@ def eda_practice(col_laps, title_prefix="FP"):
 
 
 # FUNCIONES PARA METRICAS
+# src/plots.py
+
+import numpy as np
+import matplotlib.pyplot as plt
+
+
+def y_true_vs_y_pred(y_true, y_pred, title="y_true vs y_pred", ax=None):
+    """
+    Scatter de y_true vs y_pred con línea diagonal y=x.
+    Útil para ver qué tan bien se alinean las predicciones.
+    """
+    y_true = np.asarray(y_true).ravel()
+    y_pred = np.asarray(y_pred).ravel()
+
+    if ax is None:
+        fig, ax = plt.subplots(figsize=(6, 6))
+
+    ax.scatter(y_true, y_pred, alpha=0.6, edgecolors="none")
+    min_val = min(y_true.min(), y_pred.min())
+    max_val = max(y_true.max(), y_pred.max())
+    ax.plot([min_val, max_val], [min_val, max_val], linestyle="--")
+
+    ax.set_xlabel("y_true (LapTime_s real)")
+    ax.set_ylabel("y_pred (LapTime_s predicho)")
+    ax.set_title(title)
+    ax.grid(True)
+
+    if ax is None:
+        plt.show()
+
+
+def residuals_hist(y_true, y_pred, bins=20, title="Histograma de residuos", ax=None):
+    """
+    Histograma de residuos (y_true - y_pred).
+    Ayuda a ver si los errores están centrados o sesgados.
+    """
+    y_true = np.asarray(y_true).ravel()
+    y_pred = np.asarray(y_pred).ravel()
+    residuals = y_true - y_pred
+
+    if ax is None:
+        fig, ax = plt.subplots(figsize=(6, 4))
+
+    ax.hist(residuals, bins=bins, edgecolor="black")
+    ax.set_xlabel("Residuo (y_true - y_pred) [s]")
+    ax.set_ylabel("Frecuencia")
+    ax.set_title(title)
+    ax.grid(axis="y")
+
+    if ax is None:
+        plt.show()
