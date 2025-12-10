@@ -1,6 +1,7 @@
 # src/metrics.py
 
 import numpy as np
+import pandas as pd
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 
 def _as_numpy(y_true, y_pred):
@@ -50,3 +51,14 @@ def regression_report(y_true, y_pred, rounded=4):
         "RMSE": round(rmse, rounded),
         "R2": round(r2, rounded),
     }
+
+#METRICAS PARA REPRESENTACIONES
+
+def cluster_purity(labels_true, labels_pred):
+    """
+    Calcula pureza de clustering:
+    sum_k (max_j n_{k,j}) / N
+    donde k = cluster, j = clase real.
+    """
+    contingency = pd.crosstab(labels_pred, labels_true)
+    return np.sum(contingency.max(axis=1)) / np.sum(contingency.values)

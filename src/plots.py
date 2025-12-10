@@ -1,5 +1,5 @@
 import matplotlib.pyplot as plt
-
+import pandas as pd
 
 # FUNCIONES PARA EDA
 
@@ -123,6 +123,40 @@ def residuals_hist(y_true, y_pred, bins=20, title="Histograma de residuos", ax=N
     ax.set_ylabel("Frecuencia")
     ax.set_title(title)
     ax.grid(axis="y")
+
+    if ax is None:
+        plt.show()
+
+
+# FUNCIONES PARA REPRESENTACIONES
+
+
+
+def latent_scatter(Z, labels, title="", ax=None):
+    """
+    Scatter 2D del espacio latente Z (shape: [n_samples, 2]),
+    coloreado por 'labels' (array-like, categoría por punto).
+    """
+    Z = np.asarray(Z)
+    labels = np.asarray(labels)
+
+    if ax is None:
+        fig, ax = plt.subplots(figsize=(6, 5))
+
+    scatter = ax.scatter(Z[:, 0], Z[:, 1], c=pd.factorize(labels)[0], alpha=0.7)
+    ax.set_xlabel("Latent dim 1")
+    ax.set_ylabel("Latent dim 2")
+    ax.set_title(title)
+    ax.grid(True)
+
+    # Leyenda discreta
+    unique_labels = pd.unique(labels)
+    handles = []
+    for i, lab in enumerate(unique_labels):
+        handles.append(
+            plt.Line2D([], [], marker="o", linestyle="", label=str(lab))
+        )
+    ax.legend(handles=handles, title="Label", bbox_to_anchor=(1.05, 1), loc="upper left")
 
     if ax is None:
         plt.show()
