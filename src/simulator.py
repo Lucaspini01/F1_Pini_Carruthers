@@ -206,3 +206,68 @@ def simulate_strategies(
     standings["total_time_str"] = standings["total_time_s"].apply(format_time)
 
     return standings
+
+
+# =============================================================================
+# FUNCIONES PARA EXTRACCIÓN DE ESTRATEGIA REAL
+# =============================================================================
+
+def extract_real_strategy_from_data(df_race):
+    """
+    Extrae una Strategy a partir de un DataFrame de carrera.
+    
+    Analiza los stints para determinar el patrón de neumáticos usado.
+    Usa la columna "Stint" si está disponible, o detecta cambios de compuesto.
+    
+    Parameters:
+    -----------
+    df_race : pd.DataFrame
+        DataFrame con datos de carrera que incluye columnas "Compound", "LapNumber" y opcionalmente "Stint"
+        
+    Returns:
+    --------
+    Strategy : Objeto Strategy con el nombre y los stints extraídos
+    """
+    if df_race.empty:
+        return Strategy("EMPTY", [])
+    
+    df_sorted = df_race.sort_values("LapNumber").reset_index(drop=True)
+    
+    # Si existe la columna Stint, usarla directamente
+    if "Stint" in df_sorted.columns:
+        stints = []
+        strategy_letters = []
+        
+        for stint_num in sorted(df_sorted["Stint"].unique()):
+            stint_data = df_sorted[df_sorted["Stint"] == stint_num]
+            compound = stint_data.iloc[0]["Compound"]
+            n_laps = len(stint_data)
+            
+            stints.append((compound, n_laps))
+            strategy_letters.append(compound[0])  # Primera letra del compuesto
+    else:
+        # Fallback: Detectar cambios de compuesto
+        df_sorted["compound_change"] = (df_sorted["Compound"] != df_sorted["Compound"].shift(1))
+        stint_starts = df_sorted[df_sorted["compound_change"]].copy()
+        
+        stints = []
+        strategy_letters = []
+        
+        for i, start_row in stint_starts.iterrows():
+            compound = start_row["Compound"]
+            start_lap = start_row["LapNumber"]
+            
+            # Encontrar el final del stint
+            if i < len(stint_starts) - 1:
+                end_lap = stint_starts.iloc[stint_starts.index.get_loc(i) + 1]["LapNumber"] - 1
+            else:
+                end_lap = df_sorted["LapNumber"].max()
+            
+            n_laps = int(end_lap - start_lap + 1)
+            stints.append((compound, n_laps))
+            strategy_letters.append(compound[0])  # Primera letra del compuesto
+    
+    # Crear nombre de estrategia (ej: "M-H" o "S-M-H")
+    strategy_name = "-".join(strategy_letters)
+    
+    return Strategy(strategy_name, stints)

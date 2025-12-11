@@ -217,3 +217,258 @@ def add_advanced_features(df: pd.DataFrame) -> pd.DataFrame:
 
     return df
 
+
+# =============================================================================
+# FUNCIONES PARA PROCESAMIENTO DE DATOS DE CARRERA (FastF1)
+# =============================================================================
+
+def time_to_seconds(time_val):
+    """
+    Convierte un valor de tiempo de FastF1 (timedelta o string) a segundos.
+    
+    Parameters:
+    -----------
+    time_val : timedelta, str, or None
+        Valor de tiempo a convertir
+        
+    Returns:
+    --------
+    float or None : Tiempo en segundos, o None si no es válido
+    """
+    if pd.isna(time_val) or time_val == "":
+        return None
+    try:
+        time_td = pd.to_timedelta(time_val)
+        return time_td.total_seconds()
+    except:
+        return None
+
+
+def create_leaderboard_from_session(session):
+    """
+    Crea un DataFrame con el leaderboard de una sesión de FastF1.
+    Calcula tiempos absolutos desde gaps.
+    
+    Parameters:
+    -----------
+    session : fastf1.core.Session
+        Sesión de FastF1 cargada
+        
+    Returns:
+    --------
+    pd.DataFrame : Leaderboard con columnas Position, Driver, Team, Time, Status, 
+                   Gap_s, Time_s
+    """
+    race_results = session.results
+    
+    # Crear DataFrame con clasificación real
+    leaderboard = pd.DataFrame({
+        "Position": race_results["Position"],
+        "Driver": race_results["Abbreviation"],
+        "Team": race_results["TeamName"],
+        "Time": race_results["Time"],
+        "Status": race_results["Status"],
+    })
+    
+    # Convertir tiempo a segundos
+    leaderboard["Gap_s"] = leaderboard["Time"].apply(time_to_seconds)
+    
+    # El ganador (P1) tiene el tiempo absoluto, los demás tienen gap
+    winner = leaderboard[leaderboard["Position"] == 1].iloc[0]
+    winner_time_s = winner["Gap_s"]  # Este es el tiempo absoluto del ganador
+    
+    # Calcular tiempos absolutos para todos
+    leaderboard["Time_s"] = leaderboard.apply(
+        lambda row: winner_time_s if row["Position"] == 1 else (
+            winner_time_s + row["Gap_s"] if row["Gap_s"] else None
+        ),
+        axis=1
+    )
+    
+    return leaderboard
+
+
+def add_simulated_driver_to_leaderboard(leaderboard, session, driver_abbr, 
+                                        simulated_time_s, simulated_laps,
+                                        suffix="*"):
+    """
+    Agrega un piloto simulado al leaderboard y recalcula posiciones.
+    
+    Parameters:
+    -----------
+    leaderboard : pd.DataFrame
+        Leaderboard original
+    session : fastf1.core.Session
+        Sesión de FastF1
+    driver_abbr : str
+        Abreviación del piloto (ej: "COL")
+    simulated_time_s : float
+        Tiempo simulado en segundos
+    simulated_laps : int
+        Número de vueltas completadas
+    suffix : str
+        Sufijo para el piloto simulado (default: "*")
+        
+    Returns:
+    --------
+    dict : Diccionario con leaderboard_comparison, position_gain, time_saved, y display
+    """
+    leaderboard_extended = leaderboard.copy()
+    
+    # Obtener datos del piloto real
+    driver_real = leaderboard[leaderboard["Driver"] == driver_abbr].iloc[0]
+    
+    # Agregar fila de piloto simulado
+    driver_simulated = {
+        "Position": None,
+        "Driver": f"{driver_abbr}{suffix}",
+        "Team": driver_real["Team"],
+        "Time": None,
+        "Time_s": simulated_time_s,
+        "Status": driver_real["Status"],
+        "Laps_completed": simulated_laps
+    }
+    
+    # Convertir a lista
+    leaderboard_list = leaderboard_extended.to_dict('records')
+    
+    # Calcular vueltas completadas para cada piloto
+    total_race_laps = session.total_laps
+    
+    for record in leaderboard_list:
+        if record["Status"] == "Finished":
+            record["Laps_completed"] = total_race_laps
+        elif record["Status"] == "Lapped":
+            # Obtener las vueltas del piloto desde FastF1
+            driver_laps = session.laps.pick_driver(record["Driver"])
+            if len(driver_laps) > 0:
+                record["Laps_completed"] = int(driver_laps["LapNumber"].max())
+            else:
+                record["Laps_completed"] = 0
+        else:  # DNF, Retired, etc.
+            driver_laps = session.laps.pick_driver(record["Driver"])
+            if len(driver_laps) > 0:
+                record["Laps_completed"] = int(driver_laps["LapNumber"].max())
+            else:
+                record["Laps_completed"] = 0
+    
+    leaderboard_list.append(driver_simulated)
+    
+    # Crear DataFrame
+    leaderboard_comparison = pd.DataFrame(leaderboard_list)
+    
+    # Ordenar: primero por vueltas completadas (desc), luego por tiempo (asc)
+    leaderboard_comparison = leaderboard_comparison.sort_values(
+        by=["Laps_completed", "Time_s"],
+        ascending=[False, True]
+    ).reset_index(drop=True)
+    
+    # Asignar nuevas posiciones
+    leaderboard_comparison["New_Position"] = range(1, len(leaderboard_comparison) + 1)
+    
+    # Formatear tiempos para display
+    winner_time_final = leaderboard_comparison.iloc[0]["Time_s"]
+    
+    for idx, row in leaderboard_comparison.iterrows():
+        if pd.isna(row["Time_s"]) or row["Time_s"] is None:
+            leaderboard_comparison.at[idx, "Time_Display"] = "DNF"
+        elif row["Laps_completed"] < total_race_laps:
+            # Mostrar cuántas vueltas perdió
+            laps_down = total_race_laps - row["Laps_completed"]
+            if laps_down == 1:
+                leaderboard_comparison.at[idx, "Time_Display"] = "1 LAP"
+            else:
+                leaderboard_comparison.at[idx, "Time_Display"] = f"{int(laps_down)} LAPS"
+        elif idx == 0:
+            # El ganador muestra su tiempo total
+            time_val = row["Time_s"]
+            minutes = int(time_val // 60)
+            seconds = time_val % 60
+            leaderboard_comparison.at[idx, "Time_Display"] = f"{minutes:02d}:{seconds:06.3f}"
+        else:
+            # Los que completaron todas las vueltas muestran gap con el ganador
+            gap = row["Time_s"] - winner_time_final
+            minutes = int(gap // 60)
+            seconds = gap % 60
+            leaderboard_comparison.at[idx, "Time_Display"] = f"+{minutes:02d}:{seconds:06.3f}"
+    
+    # Preparar display
+    display_cols = ["New_Position", "Driver", "Team", "Time_Display", "Status", "Laps_completed"]
+    leaderboard_display = leaderboard_comparison[display_cols].copy()
+    leaderboard_display.columns = ["Pos", "Driver", "Team", "Time/Gap", "Status", "Laps"]
+    
+    # Calcular métricas
+    driver_real_pos = leaderboard_comparison[leaderboard_comparison["Driver"] == driver_abbr]["New_Position"].values[0]
+    driver_sim_pos = leaderboard_comparison[leaderboard_comparison["Driver"] == f"{driver_abbr}{suffix}"]["New_Position"].values[0]
+    position_gain = driver_real_pos - driver_sim_pos
+    
+    # Calcular tiempo ahorrado
+    driver_real_time = leaderboard_comparison[leaderboard_comparison["Driver"] == driver_abbr]["Time_s"].values[0]
+    time_saved = driver_real_time - simulated_time_s
+    
+    return {
+        "leaderboard_comparison": leaderboard_comparison,
+        "leaderboard_display": leaderboard_display,
+        "position_gain": position_gain,
+        "time_saved": time_saved,
+        "driver_real_pos": driver_real_pos,
+        "driver_sim_pos": driver_sim_pos,
+    }
+
+
+def calculate_real_race_times(session):
+    """
+    Calcula los tiempos totales reales de carrera sumando los tiempos de cada vuelta.
+    
+    Parameters:
+    -----------
+    session : fastf1.core.Session
+        Sesión de FastF1 cargada
+        
+    Returns:
+    --------
+    pd.DataFrame : DataFrame con columnas Driver, Total_Time_s, Laps_Completed, Status
+    """
+    all_drivers = session.results["Abbreviation"].values
+    
+    real_times = {}
+    
+    for driver_abbr in all_drivers:
+        driver_laps = session.laps.pick_driver(driver_abbr)
+        
+        if len(driver_laps) == 0:
+            real_times[driver_abbr] = {
+                "total_time_s": None,
+                "laps_completed": 0,
+                "status": "DNF"
+            }
+            continue
+        
+        # Sumar todos los tiempos de vuelta (convertir a segundos)
+        lap_times_s = driver_laps["LapTime"].dt.total_seconds()
+        total_time_s = lap_times_s.sum()
+        laps_completed = int(driver_laps["LapNumber"].max())
+        
+        # Obtener status
+        driver_result = session.results[session.results["Abbreviation"] == driver_abbr]
+        status = driver_result["Status"].values[0] if len(driver_result) > 0 else "Unknown"
+        
+        real_times[driver_abbr] = {
+            "total_time_s": total_time_s,
+            "laps_completed": laps_completed,
+            "status": status
+        }
+    
+    # Crear DataFrame con tiempos reales calculados
+    real_times_df = pd.DataFrame([
+        {
+            "Driver": driver,
+            "Total_Time_s": data["total_time_s"],
+            "Laps_Completed": data["laps_completed"],
+            "Status": data["status"]
+        }
+        for driver, data in real_times.items()
+    ])
+    
+    return real_times_df
+
