@@ -107,6 +107,21 @@ def simulate_strategy_for_driver(
 
     # Recalcular FE (stints, tyrelife_norm, etc.) con la nueva estrategia
     df_fe = add_basic_features(df_sim)
+    
+    # Si el modelo usa features avanzadas (como degradation_rate, S1_delta, etc.),
+    # agregarlas. Detectamos esto viendo si alguna feature avanzada está en la lista.
+    # Features avanzadas típicas: degradation_rate, S1_delta, track_evo, etc.
+    advanced_features = {
+        "degradation_rate", "S1_delta", "S2_delta", "S3_delta", 
+        "S1_rel", "S2_rel", "S3_rel", "Lap_global", "track_evo",
+        "speed_drop_fl", "speed_ratio_fl_st", "SpeedI1_norm_st", "SpeedI2_norm_st",
+        "laps_since_pit", "compound_offset"
+    }
+    needs_advanced = bool(set(legal_features_num) & advanced_features)
+    
+    if needs_advanced:
+        from src.preprocessing import add_advanced_features
+        df_fe = add_advanced_features(df_fe)
 
     # Armar X con las features que usa el modelo
     feature_cols = [c for c in (legal_features_num + legal_features_cat) if c in df_fe.columns]

@@ -187,6 +187,10 @@ def add_advanced_features(df: pd.DataFrame) -> pd.DataFrame:
         )["LapTime_s"].diff()
         # reindex al orden original
         df["degradation_rate"] = degr.reindex(df_sorted.index).reindex(df.index)
+    else:
+        # Si no hay LapTime_s (por ejemplo, durante simulación), crear columna con NaN
+        # El imputer del pipeline se encargará de rellenarla
+        df["degradation_rate"] = np.nan
 
     # c) Offset teórico de compuesto (muy simple, solo como prior)
     if "Compound" in df.columns:
