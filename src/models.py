@@ -1,5 +1,3 @@
-# src/models.py
-
 from sklearn.ensemble import GradientBoostingRegressor
 from sklearn.compose import ColumnTransformer
 from sklearn.preprocessing import StandardScaler, OneHotEncoder
@@ -31,7 +29,7 @@ def build_gb_fe2_tuned(legal_features_num, legal_features_cat):
     gb = GradientBoostingRegressor(
         random_state=42,
         
-        # Parametros obtenidos por tuning:
+        # Parametros obtenidos por tuning con Optuna:
         n_estimators=679,       
         learning_rate=0.08698283488468485,    
         max_depth= 5,          
